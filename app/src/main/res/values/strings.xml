@@ -7,5 +7,6 @@
     <string name="text_view_title_movie">Title:</string>
     <string name="text_view_title_year">Year:</string>
     <string name="button_title_search" />
+    <string name="text_view_title_plot">Plot:</string>
 
 </resources>
