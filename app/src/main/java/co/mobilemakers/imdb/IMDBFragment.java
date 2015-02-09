@@ -25,7 +25,6 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.net.ssl.HttpsURLConnection;
 
 /**
  * A placeholder fragment containing a simple view.
@@ -113,15 +112,15 @@ public class IMDBFragment extends Fragment {
 
             try {
                 URL url = ConstructURLQuery(title);
-                HttpURLConnection httpURLConnection = (HttpURLConnection) url.openConnection();
+                HttpURLConnection URLConnection = (HttpURLConnection) url.openConnection();
                // HttpsURLConnection httpsURLConnection = (HttpsURLConnection) url.openConnection();
                 try {
-                    String response = readFullResponse(httpURLConnection.getInputStream());
+                    String response = readFullResponse(URLConnection.getInputStream());
                     listOfRepos = parseResponse(response);
                 } catch(IOException e){
                     e.printStackTrace();
                 }finally{
-                    httpURLConnection.disconnect();
+                    URLConnection.disconnect();
                 }
             } catch (IOException e) {
                 e.printStackTrace();
