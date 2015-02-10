@@ -5,7 +5,9 @@ import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
+import android.support.v4.app.ListFragment;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -15,6 +17,12 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import com.squareup.okhttp.Callback;
+import com.squareup.okhttp.OkHttpClient;
+import com.squareup.okhttp.Request;
+import com.squareup.okhttp.Response;
+
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -28,22 +36,21 @@ import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 
-
-/**
- * A placeholder fragment containing a simple view.
- */
-public class IMDBFragment extends Fragment {
+public class IMDBFragment extends ListFragment {
 
     private final static String LOG_TAG = IMDBFragment.class.getSimpleName();
     private final static String IMDB_TITLE  = "Title";
-    private final static String IMDB_YEAR   = "Year";
     private final static String IMDB_PLOT   = "Plot";
+    private final static String IMDB_YEAR   = "Year";
     private final static String IMDB_POSTER = "Poster";
+
+    IMDBRepoAdapter mAdapter;
 
     TextView mTitle, mYear, mPlot;
     ImageView mPoster;
-    String[] mMovie;
     EditText mEditTextTitle, mEditTextYear;
 
     public IMDBFragment() {
@@ -54,15 +61,19 @@ public class IMDBFragment extends Fragment {
 
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
         wireUpViews(rootView);
+        prepareButton(rootView);
+        return rootView;
+    }
+
+    private void prepareButton(View rootView) {
         ImageButton button = (ImageButton)rootView.findViewById(R.id.imageButton);
         button.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                new FetchReposTask().execute(mEditTextTitle.getText().toString(),
-                                             mEditTextYear.getText().toString());
+                fetchReposInQueue(mEditTextTitle.getText().toString(),
+                                  mEditTextYear.getText().toString());
             }
         });
-        return rootView;
     }
 
     private void wireUpViews(View rootView) {
@@ -74,119 +85,69 @@ public class IMDBFragment extends Fragment {
         mPoster = (ImageView)rootView.findViewById(R.id.image_view_poster);
     }
 
-
-    private String readFullResponse(InputStream inputStream) throws IOException {
-        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
-        StringBuilder stringBuilder = new StringBuilder();
-        String response ="";
-        String line;
-        while((line = bufferedReader.readLine()) != null){
-            stringBuilder.append(line);
-        }
-        if(stringBuilder.length() > 0){
-            response = stringBuilder.toString();
-        }
-        return response;
+    @Override
+    public void onActivityCreated(@Nullable Bundle savedInstanceState) {
+        super.onActivityCreated(savedInstanceState);
+        prepareListView();
     }
 
-    private void parseResponse(String response){
+    private void prepareListView() {
+        List<IMDBRepo> repos = new ArrayList<>();
+        mAdapter = new IMDBRepoAdapter(getActivity(), repos);
+        setListAdapter(mAdapter);
+    }
+
+    private void fetchReposInQueue(String title, String year){
+        try {
+            URL url = ConstructURLQuery(title, year);
+            Request request = new Request.Builder().url(url.toString()).build();
+            OkHttpClient client = new OkHttpClient();
+            client.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(Request request, IOException e) {
+                    e.printStackTrace();
+                }
+
+                @Override
+                public void onResponse(Response response) throws IOException {
+                    String responseString = response.body().string();
+                    final List<IMDBRepo> listOfRepos = parseResponse(responseString);
+                    getActivity().runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            mAdapter.clear();
+                            mAdapter.addAll(listOfRepos);
+                            mAdapter.notifyDataSetChanged();
+                        }
+                    });
+                }
+            });
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    private List<IMDBRepo> parseResponse(String response){
+        List<IMDBRepo> repos = new ArrayList<>();
+        IMDBRepo repo;
 
         try {
-            if(mMovie == null){
-                mMovie = new String[4];
-            }
 
             JSONObject responseJsonArray = new JSONObject(response);
 
-            mMovie[0] = responseJsonArray.getString(IMDB_TITLE);
-            mMovie[1] = responseJsonArray.getString(IMDB_YEAR);
-            mMovie[2] = responseJsonArray.getString(IMDB_PLOT);
-            mMovie[3] = responseJsonArray.getString(IMDB_POSTER);
+            repo = new IMDBRepo();
+            repo.setTitle(responseJsonArray.getString(IMDB_TITLE));
+            repo.setPlot(responseJsonArray.getString(IMDB_PLOT));
+            repo.setYear(responseJsonArray.getString(IMDB_YEAR));
+            repo.setImageFromURL(responseJsonArray.getString(IMDB_POSTER));
+            repos.add(repo);
 
         } catch (JSONException e) {
             e.printStackTrace();
         }
-    }
-
-    class FetchReposTask extends AsyncTask<String, Void, String[]> {
-
-        Bitmap mBitmap;
-
-        @Override
-        protected void onPostExecute(String[] response) {
-            super.onPostExecute(response);
-
-            mTitle.setText(mMovie[0]);
-            mYear.setText(mMovie[1]);
-            mPlot.setText(mMovie[2]);
-            if(mBitmap != null){
-                mPoster.setImageBitmap(mBitmap);
-            }
-        }
-
-        private Bitmap downloadImage(String stringURL){
-            Bitmap bitmap = null;
-            try {
-                URL url = new URL(stringURL);
-                URI uri = new URI(url.getProtocol(), url.getHost(),url.getPath(), url.getQuery(), null);
-                HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
-                connection.setDoInput(true);
-                connection.connect();
-                InputStream input = connection.getInputStream();
-                ByteArrayOutputStream byteBuffer = new ByteArrayOutputStream();
-                int bufferSize = 1024;
-                byte[] buffer = new byte[bufferSize];
-                int len;
-                while ((len = input.read(buffer)) != -1) {
-                    byteBuffer.write(buffer, 0, len);
-                }
-                byte[] img = byteBuffer.toByteArray();
-                byteBuffer.flush();
-                byteBuffer.close();
-                input.close();
-                bitmap = BitmapFactory.decodeByteArray(img, 0, img.length);
-            }  catch (IOException e) {
-                e.printStackTrace();
-            } catch (URISyntaxException e) {
-                e.printStackTrace();
-            }
-            return bitmap;
-        }
-
-        @Override
-        protected String[] doInBackground(String... params) {
-
-            String title,year;
-            final String[] result = new String[2];
-
-            if(params.length >= 1){
-                title = params[0];
-                year  = params[1];
-            }else{
-                title = "Maze runner";
-                year  = "2014";
-            }
-
-            try {
-                URL url = ConstructURLQuery(title, year);
-                HttpURLConnection URLConnection = (HttpURLConnection) url.openConnection();
-                try {
-                    String response = readFullResponse(URLConnection.getInputStream());
-                    parseResponse(response);
-
-                    if(!mMovie[3].isEmpty()){
-                       mBitmap = downloadImage(mMovie[3]);
-                    }
-                } catch(IOException e){
-                    e.printStackTrace();
-                }finally{
-                    URLConnection.disconnect();
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            return result;
-        }
+        return repos;
     }
 
     private URL ConstructURLQuery(String title, String year) throws MalformedURLException {
