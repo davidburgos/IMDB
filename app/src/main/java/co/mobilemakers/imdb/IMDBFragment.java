@@ -1,12 +1,8 @@
 package co.mobilemakers.imdb;
 
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.net.Uri;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.annotation.Nullable;
-import android.support.v4.app.Fragment;
 import android.support.v4.app.ListFragment;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -16,25 +12,18 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.squareup.okhttp.Callback;
 import com.squareup.okhttp.OkHttpClient;
 import com.squareup.okhttp.Request;
 import com.squareup.okhttp.Response;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
-import java.net.URI;
-import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +31,7 @@ import java.util.List;
 public class IMDBFragment extends ListFragment {
 
     private final static String LOG_TAG = IMDBFragment.class.getSimpleName();
+    private final static String IMDB_ERROR  = "Error";
     private final static String IMDB_TITLE  = "Title";
     private final static String IMDB_PLOT   = "Plot";
     private final static String IMDB_YEAR   = "Year";
@@ -116,8 +106,13 @@ public class IMDBFragment extends ListFragment {
                         @Override
                         public void run() {
                             mAdapter.clear();
-                            mAdapter.addAll(listOfRepos);
-                            mAdapter.notifyDataSetChanged();
+
+                            if(listOfRepos.isEmpty()){
+                                Toast.makeText(getActivity(), getString(R.id.error_message), Toast.LENGTH_SHORT).show();
+                            }else {
+                                mAdapter.addAll(listOfRepos);
+                                mAdapter.notifyDataSetChanged();
+                            }
                         }
                     });
                 }
@@ -126,7 +121,6 @@ public class IMDBFragment extends ListFragment {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
     }
 
     private List<IMDBRepo> parseResponse(String response){
@@ -138,12 +132,13 @@ public class IMDBFragment extends ListFragment {
             JSONObject responseJsonArray = new JSONObject(response);
 
             repo = new IMDBRepo();
-            repo.setTitle(responseJsonArray.getString(IMDB_TITLE));
-            repo.setPlot(responseJsonArray.getString(IMDB_PLOT));
-            repo.setYear(responseJsonArray.getString(IMDB_YEAR));
-            repo.setImageFromURL(responseJsonArray.getString(IMDB_POSTER));
-            repos.add(repo);
-
+            if (!responseJsonArray.has(IMDB_ERROR)) {
+                if (responseJsonArray.has(IMDB_TITLE)) repo.setTitle(responseJsonArray.getString(IMDB_TITLE));
+                if (responseJsonArray.has(IMDB_PLOT))  repo.setPlot(responseJsonArray.getString(IMDB_PLOT));
+                if (responseJsonArray.has(IMDB_YEAR))  repo.setYear(responseJsonArray.getString(IMDB_YEAR));
+                if (responseJsonArray.has(IMDB_POSTER))repo.setImageFromURL(responseJsonArray.getString(IMDB_POSTER));
+                repos.add(repo);
+            }
         } catch (JSONException e) {
             e.printStackTrace();
         }
