@@ -1,29 +1,33 @@
 package co.mobilemakers.imdb;
 
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
-import android.text.TextUtils;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.EditText;
+import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.TextView;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
 
 
 /**
@@ -38,6 +42,9 @@ public class IMDBFragment extends Fragment {
     private final static String IMDB_POSTER = "Poster";
 
     TextView mTitle, mYear, mPlot;
+    ImageView mPoster;
+    String[] mMovie;
+    EditText mEditTextTitle, mEditTextYear;
 
     public IMDBFragment() {
     }
@@ -46,11 +53,25 @@ public class IMDBFragment extends Fragment {
     public View onCreateView(LayoutInflater inflater, ViewGroup container,Bundle savedInstanceState) {
 
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
-        mTitle = (TextView)rootView.findViewById(R.id.text_view_title);
-        mYear  = (TextView)rootView.findViewById(R.id.text_view_year);
-        mPlot  = (TextView)rootView.findViewById(R.id.text_view_plot);
-        new FetchReposTask().execute("Maze runner");
+        wireUpViews(rootView);
+        ImageButton button = (ImageButton)rootView.findViewById(R.id.imageButton);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                new FetchReposTask().execute(mEditTextTitle.getText().toString(),
+                                             mEditTextYear.getText().toString());
+            }
+        });
         return rootView;
+    }
+
+    private void wireUpViews(View rootView) {
+        mEditTextTitle = (EditText)rootView.findViewById(R.id.edit_text_title);
+        mEditTextYear = (EditText)rootView.findViewById(R.id.edit_text_year);
+        mTitle  = (TextView)rootView.findViewById(R.id.text_view_title_movie);
+        mYear   = (TextView)rootView.findViewById(R.id.text_view_year);
+        mPlot   = (TextView)rootView.findViewById(R.id.text_view_plot);
+        mPoster = (ImageView)rootView.findViewById(R.id.image_view_poster);
     }
 
 
@@ -68,41 +89,77 @@ public class IMDBFragment extends Fragment {
         return response;
     }
 
-    private String parseResponse(String response){
+    private void parseResponse(String response){
 
-        List<String> repos = new ArrayList<>();
         try {
-            JSONArray responseJsonArray = new JSONArray(response);
-            JSONObject object;
-            for(int i=0;i<responseJsonArray.length();i++){
-                object = responseJsonArray.getJSONObject(i);
-                mTitle.setText(object.getString(IMDB_TITLE));
+            if(mMovie == null){
+                mMovie = new String[4];
             }
+
+            JSONObject responseJsonArray = new JSONObject(response);
+
+            mMovie[0] = responseJsonArray.getString(IMDB_TITLE);
+            mMovie[1] = responseJsonArray.getString(IMDB_YEAR);
+            mMovie[2] = responseJsonArray.getString(IMDB_PLOT);
+            mMovie[3] = responseJsonArray.getString(IMDB_POSTER);
+
         } catch (JSONException e) {
             e.printStackTrace();
         }
-        return TextUtils.join(", ", repos);
     }
 
-    class FetchReposTask extends AsyncTask<String, Void, String> {
+    class FetchReposTask extends AsyncTask<String, Void, String[]> {
 
-        String username="";
-        String listOfRepos ="";
+        Bitmap mBitmap;
 
         @Override
-        protected void onPostExecute(String response) {
+        protected void onPostExecute(String[] response) {
             super.onPostExecute(response);
 
-            mTitle.setText(response);
-            mYear.setText(response);
-            mPlot.setText(response);
+            mTitle.setText(mMovie[0]);
+            mYear.setText(mMovie[1]);
+            mPlot.setText(mMovie[2]);
+            if(mBitmap != null){
+                mPoster.setImageBitmap(mBitmap);
+            }
+        }
+
+        private Bitmap downloadImage(String stringURL){
+            Bitmap bitmap = null;
+            try {
+                URL url = new URL(stringURL);
+                URI uri = new URI(url.getProtocol(), url.getHost(),url.getPath(), url.getQuery(), null);
+                HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
+                connection.setDoInput(true);
+                connection.connect();
+                InputStream input = connection.getInputStream();
+                ByteArrayOutputStream byteBuffer = new ByteArrayOutputStream();
+                int bufferSize = 1024;
+                byte[] buffer = new byte[bufferSize];
+                int len;
+                while ((len = input.read(buffer)) != -1) {
+                    byteBuffer.write(buffer, 0, len);
+                }
+                byte[] img = byteBuffer.toByteArray();
+                byteBuffer.flush();
+                byteBuffer.close();
+                input.close();
+                bitmap = BitmapFactory.decodeByteArray(img, 0, img.length);
+            }  catch (IOException e) {
+                e.printStackTrace();
+            } catch (URISyntaxException e) {
+                e.printStackTrace();
+            }
+            return bitmap;
         }
 
         @Override
-        protected String doInBackground(String... params) {
-            String title,year;
+        protected String[] doInBackground(String... params) {
 
-            if(params.length >= 3){
+            String title,year;
+            final String[] result = new String[2];
+
+            if(params.length >= 1){
                 title = params[0];
                 year  = params[1];
             }else{
@@ -111,12 +168,15 @@ public class IMDBFragment extends Fragment {
             }
 
             try {
-                URL url = ConstructURLQuery(title);
+                URL url = ConstructURLQuery(title, year);
                 HttpURLConnection URLConnection = (HttpURLConnection) url.openConnection();
-               // HttpsURLConnection httpsURLConnection = (HttpsURLConnection) url.openConnection();
                 try {
                     String response = readFullResponse(URLConnection.getInputStream());
-                    listOfRepos = parseResponse(response);
+                    parseResponse(response);
+
+                    if(!mMovie[3].isEmpty()){
+                       mBitmap = downloadImage(mMovie[3]);
+                    }
                 } catch(IOException e){
                     e.printStackTrace();
                 }finally{
@@ -125,19 +185,34 @@ public class IMDBFragment extends Fragment {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            return listOfRepos;
+            return result;
         }
     }
 
-    private URL ConstructURLQuery(String title) throws MalformedURLException {
-        final String IMDB_BASE_URL ="www.omdbapi.com";
+    private URL ConstructURLQuery(String title, String year) throws MalformedURLException {
+
+        final String IMDB_TITLE  = "t";
+        final String IMDB_PLOT   = "plot";
+        final String IMDB_RETURN = "r";
+        final String IMDB_YEAR   = "y";
+
+        final String IMDB_PLOT_VALUE   = "short";
+        final String IMDB_RETURN_VALUE = "json";
+
+        final String IMDB_BASE_URL = "www.omdbapi.com";
+        final String IMDB_BASE_PROTOCOL = "http";
 
         Uri.Builder builder = new Uri.Builder();
-        builder.scheme("http").
+        builder.scheme(IMDB_BASE_PROTOCOL).
                 authority(IMDB_BASE_URL).
-                appendQueryParameter("t", title).
-                appendQueryParameter("plot","short").
-                appendQueryParameter("r","json");
+                appendQueryParameter(IMDB_TITLE, title).
+                appendQueryParameter(IMDB_PLOT,IMDB_PLOT_VALUE).
+                appendQueryParameter(IMDB_RETURN,IMDB_RETURN_VALUE);
+
+        if(!year.isEmpty()){
+            builder.appendQueryParameter(IMDB_YEAR,year);
+        }
+
         Uri uri = builder.build();
         Log.d(LOG_TAG, "Build URI: " + uri.toString());
 
